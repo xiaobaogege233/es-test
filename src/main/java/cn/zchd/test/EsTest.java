@@ -5,6 +5,8 @@ import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.mapping.Property;
 import co.elastic.clients.elasticsearch._types.query_dsl.*;
+import co.elastic.clients.elasticsearch.core.CountRequest;
+import co.elastic.clients.elasticsearch.core.CountResponse;
 import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
@@ -54,11 +56,13 @@ public class EsTest {
 //        String password = "dsrrd@121018";
         ElasticsearchClient elasticsearchClient = connectByPasswordAndSsl(serverUrl, username, password);
 //        deleteIndex(elasticsearchClient);
-        indexDetail(elasticsearchClient);
+//        indexDetail(elasticsearchClient);
 //        createIndexAndMappings(elasticsearchClient);
 //        indexIsExist(elasticsearchClient);
 //        getDocument(elasticsearchClient);
 //        testMultipleCondition(elasticsearchClient);
+        long count = getCount(elasticsearchClient);
+        System.out.println(count);
     }
 
     // 直连连接ES
@@ -108,8 +112,8 @@ public class EsTest {
     }
 
     private static SSLContext buildSSLContext() {
-//        ClassPathResource resource = new ClassPathResource("http_ca.crt");
-        ClassPathResource resource = new ClassPathResource("http_ca_online.crt");
+        ClassPathResource resource = new ClassPathResource("http_ca.crt");
+//        ClassPathResource resource = new ClassPathResource("http_ca_online.crt");
         SSLContext sslContext = null;
         try {
             CertificateFactory factory = CertificateFactory.getInstance("X.509");
@@ -338,5 +342,15 @@ public class EsTest {
             log.info("== hit: {}, id: {}", hit.source(), hit.id());
         }
 
+    }
+
+    public static long getCount(ElasticsearchClient elasticsearchClient){
+        CountResponse count;
+        try {
+            count = elasticsearchClient.count(CountRequest.of(t -> t.index("happinessrecord")));
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        return count.count();
     }
 }
