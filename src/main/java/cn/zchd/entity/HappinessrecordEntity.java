@@ -13,6 +13,7 @@ import java.math.BigDecimal;
 public class HappinessrecordEntity{
 
 
+    private Long id;
 
     private String businesstype = "";
 
@@ -36,6 +37,12 @@ public class HappinessrecordEntity{
 
     private BigDecimal amount;
 
+    private long userid;
+
     private long createtime;
+
+    private long starttime;
+
+    private long endtime;
 
 }

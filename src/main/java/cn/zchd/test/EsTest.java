@@ -3,6 +3,8 @@ package cn.zchd.test;
 import cn.zchd.entity.HappinessrecordEntity;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.SortOrder;
+import co.elastic.clients.elasticsearch._types.aggregations.CompositeAggregationSource;
+import co.elastic.clients.elasticsearch._types.aggregations.CompositeBucket;
 import co.elastic.clients.elasticsearch._types.mapping.Property;
 import co.elastic.clients.elasticsearch._types.query_dsl.*;
 import co.elastic.clients.elasticsearch.core.CountRequest;
@@ -10,6 +12,7 @@ import co.elastic.clients.elasticsearch.core.CountResponse;
 import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
+import co.elastic.clients.elasticsearch.core.search.TrackHits;
 import co.elastic.clients.elasticsearch.indices.DeleteIndexResponse;
 import co.elastic.clients.elasticsearch.indices.GetIndexResponse;
 import co.elastic.clients.json.JsonData;
@@ -41,9 +44,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Slf4j
 public class EsTest {
@@ -54,15 +55,9 @@ public class EsTest {
         String username = "elastic";
         String password = "ZzW1guG*Mmosij9xmjaF";
 //        String password = "dsrrd@121018";
-        ElasticsearchClient elasticsearchClient = connectByPasswordAndSsl(serverUrl, username, password);
-//        deleteIndex(elasticsearchClient);
-//        indexDetail(elasticsearchClient);
-//        createIndexAndMappings(elasticsearchClient);
-//        indexIsExist(elasticsearchClient);
-//        getDocument(elasticsearchClient);
-//        testMultipleCondition(elasticsearchClient);
-        long count = getCount(elasticsearchClient);
-        System.out.println(count);
+//        ElasticsearchClient elasticsearchClient = connectByPasswordAndSsl(serverUrl, username, password);
+        ElasticsearchClient elasticsearchClient = connect(serverUrl);
+        distinctEsQuery(elasticsearchClient);
     }
 
     // 直连连接ES
@@ -344,10 +339,66 @@ public class EsTest {
 
     }
 
+    public static void distinctEsQuery(ElasticsearchClient elasticsearchClient){
+        String afterKey = "115046196703103433";
+        TermQuery termQuery = TermQuery.of(t -> t.field("businesstype").value("2"));
+
+        WildcardQuery wildcardQuery = WildcardQuery.of(t -> t.field("zonecode").value(15 + "*"));
+        SearchRequest request = SearchRequest.of(searchRequest ->
+                {
+                    searchRequest.index("happinessrecord");
+                    List<Map<String, CompositeAggregationSource>> list = new ArrayList<>();
+                    HashMap<String, CompositeAggregationSource> map = new HashMap<>();
+                    map.put("idcard",CompositeAggregationSource.of(t -> t.terms(a -> a.field("idcard"))));
+                    list.add(map);
+                    searchRequest.aggregations("unique",a -> a
+                            .composite(h -> {
+                                h.size(10).sources(list);
+                                if(afterKey != null){
+                                    h.after("idcard",afterKey);
+                                }
+                                return h;
+                            })
+                    );
+                    searchRequest.aggregations("count",a -> a
+                            .cardinality(h -> h
+                                    .field("idcard")
+                                    .precisionThreshold(40000)
+                            )
+                    );
+
+                    // 如果有多个 .query 后面的 query 会覆盖前面的 query
+                    searchRequest.query(query -> query
+                                    .bool(bool -> {
+                                        bool.must(new Query(termQuery));
+                                        bool.must(new Query(wildcardQuery));
+                                        return bool;
+                                    })
+                    );
+                    return  searchRequest;
+                }
+        );
+        SearchResponse<HappinessrecordEntity> searchResponse;
+        try {
+            searchResponse = elasticsearchClient.search(request, HappinessrecordEntity.class);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
+        List<CompositeBucket> unique = searchResponse.aggregations().get("unique").composite().buckets().array();
+        log.info("去重的总条数有：{}", searchResponse.aggregations().get("count").cardinality().value());
+        for (CompositeBucket compositeBucket : unique) {
+            Map<String, JsonData> key = compositeBucket.key();
+            System.out.println(key.get("idcard"));
+        }
+        Map<String, JsonData> key = searchResponse.aggregations().get("unique").composite().afterKey();
+        System.out.println(key.get("idcard"));
+    }
+
     public static long getCount(ElasticsearchClient elasticsearchClient){
         CountResponse count;
         try {
-            count = elasticsearchClient.count(CountRequest.of(t -> t.index("happinessrecord")));
+            count = elasticsearchClient.count(CountRequest.of(t -> t.index("happiness")));
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
