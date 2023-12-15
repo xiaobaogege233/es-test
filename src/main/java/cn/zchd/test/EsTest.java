@@ -1,16 +1,14 @@
 package cn.zchd.test;
 
 import cn.zchd.entity.HappinessrecordEntity;
+import cn.zchd.entity.TestBean;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.aggregations.CompositeAggregationSource;
 import co.elastic.clients.elasticsearch._types.aggregations.CompositeBucket;
 import co.elastic.clients.elasticsearch._types.mapping.Property;
 import co.elastic.clients.elasticsearch._types.query_dsl.*;
-import co.elastic.clients.elasticsearch.core.CountRequest;
-import co.elastic.clients.elasticsearch.core.CountResponse;
-import co.elastic.clients.elasticsearch.core.SearchRequest;
-import co.elastic.clients.elasticsearch.core.SearchResponse;
+import co.elastic.clients.elasticsearch.core.*;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.elasticsearch.core.search.TrackHits;
 import co.elastic.clients.elasticsearch.indices.DeleteIndexResponse;
@@ -50,14 +48,13 @@ import java.util.*;
 public class EsTest {
 
     public static void main(String[] args) {
-        String serverUrl = "127.0.0.1:9200";
-//        String serverUrl = "172.20.231.3:9200";
+//        String serverUrl = "127.0.0.1:9200";
+        String serverUrl = "172.20.231.3:9200";
         String username = "elastic";
-        String password = "ZzW1guG*Mmosij9xmjaF";
-//        String password = "dsrrd@121018";
-//        ElasticsearchClient elasticsearchClient = connectByPasswordAndSsl(serverUrl, username, password);
-        ElasticsearchClient elasticsearchClient = connect(serverUrl);
-        distinctEsQuery(elasticsearchClient);
+//        String password = "ZzW1guG*Mmosij9xmjaF";
+        String password = "dsrrd@121018";
+        ElasticsearchClient elasticsearchClient = connectByPasswordAndSsl(serverUrl, username, password);
+        System.out.println(getCount(elasticsearchClient));
     }
 
     // 直连连接ES
@@ -107,8 +104,8 @@ public class EsTest {
     }
 
     private static SSLContext buildSSLContext() {
-        ClassPathResource resource = new ClassPathResource("http_ca.crt");
-//        ClassPathResource resource = new ClassPathResource("http_ca_online.crt");
+//        ClassPathResource resource = new ClassPathResource("http_ca.crt");
+        ClassPathResource resource = new ClassPathResource("http_ca_online.crt");
         SSLContext sslContext = null;
         try {
             CertificateFactory factory = CertificateFactory.getInstance("X.509");
@@ -273,24 +270,20 @@ public class EsTest {
 
 
 
-    // 单挑查询  和数据库精准查询不一样 会有误差
+    // 单条查询  和数据库精准查询不一样 会有误差
     public static void getDocument (ElasticsearchClient elasticsearchClient) {
-        SearchResponse<HappinessrecordEntity> search;
+        SearchResponse<TestBean> search;
         try {
-            search = elasticsearchClient.search(s -> s.index("happinessrecord")
+            search = elasticsearchClient.search(s -> s.index("test")
                             .from(0)  // 相当于mysql的offset
                             .size(10) // 相当于mysql的size
-                            .query(q ->
-                                    q.term(t ->
-                                            t.field("realname").value(v -> v.stringValue("吴秀兰"))
-                                    )
-                            ),
-                    HappinessrecordEntity.class);
+                            ,
+                    TestBean.class);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
 
-        for (Hit<HappinessrecordEntity> hit: search.hits().hits()) {
+        for (Hit<TestBean> hit: search.hits().hits()) {
             log.info("== hit: source: {}, id: {}", hit.source(), hit.id());
         }
     }
@@ -340,26 +333,15 @@ public class EsTest {
     }
 
     public static void distinctEsQuery(ElasticsearchClient elasticsearchClient){
-        String afterKey = "115046196703103433";
-        TermQuery termQuery = TermQuery.of(t -> t.field("businesstype").value("2"));
+        TermQuery termQuery = TermQuery.of(t -> t.field("businesstypeList").value("7"));
 
-        WildcardQuery wildcardQuery = WildcardQuery.of(t -> t.field("zonecode").value(15 + "*"));
+        WildcardQuery wildcardQuery = WildcardQuery.of(t -> t.field("zonecodeList").value(1509 + "*"));
         SearchRequest request = SearchRequest.of(searchRequest ->
                 {
-                    searchRequest.index("happinessrecord");
-                    List<Map<String, CompositeAggregationSource>> list = new ArrayList<>();
-                    HashMap<String, CompositeAggregationSource> map = new HashMap<>();
-                    map.put("idcard",CompositeAggregationSource.of(t -> t.terms(a -> a.field("idcard"))));
-                    list.add(map);
-                    searchRequest.aggregations("unique",a -> a
-                            .composite(h -> {
-                                h.size(10).sources(list);
-                                if(afterKey != null){
-                                    h.after("idcard",afterKey);
-                                }
-                                return h;
-                            })
-                    );
+                    searchRequest.index("happiness")
+                            .from(0)
+                            .size(10);
+
                     searchRequest.aggregations("count",a -> a
                             .cardinality(h -> h
                                     .field("idcard")
@@ -372,27 +354,25 @@ public class EsTest {
                                     .bool(bool -> {
                                         bool.must(new Query(termQuery));
                                         bool.must(new Query(wildcardQuery));
+//                                        bool.must(new Query(TermQuery.of(t -> t.field("businesstypeList").value("1"))));
                                         return bool;
                                     })
-                    );
+                    ).trackTotalHits(t -> t.enabled(true));
                     return  searchRequest;
                 }
         );
-        SearchResponse<HappinessrecordEntity> searchResponse;
+        SearchResponse<TestBean> searchResponse;
         try {
-            searchResponse = elasticsearchClient.search(request, HappinessrecordEntity.class);
+            searchResponse = elasticsearchClient.search(request, TestBean.class);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
-
-        List<CompositeBucket> unique = searchResponse.aggregations().get("unique").composite().buckets().array();
         log.info("去重的总条数有：{}", searchResponse.aggregations().get("count").cardinality().value());
-        for (CompositeBucket compositeBucket : unique) {
-            Map<String, JsonData> key = compositeBucket.key();
-            System.out.println(key.get("idcard"));
+        log.info("返回的总条数有：{}", searchResponse.hits().total().value());
+        List<Hit<TestBean>> hitList = searchResponse.hits().hits();
+        for (Hit<TestBean> hit : hitList) {
+            log.info("== hit: {}, id: {}", hit.source(), hit.id());
         }
-        Map<String, JsonData> key = searchResponse.aggregations().get("unique").composite().afterKey();
-        System.out.println(key.get("idcard"));
     }
 
     public static long getCount(ElasticsearchClient elasticsearchClient){
@@ -403,5 +383,77 @@ public class EsTest {
             throw new RuntimeException(e);
         }
         return count.count();
+    }
+
+    public static void testData(ElasticsearchClient elasticsearchClient){
+        try {
+            elasticsearchClient.indices().create(c -> c
+                    .index("happiness")
+                    .mappings(m -> m
+                            .properties("realname",z -> z
+                                    .keyword(k -> k.index(true)))
+                            .properties("idcard",z -> z
+                                    .keyword(k -> k.index(true)))
+                            .properties("businesstypeList",z -> z
+                                    .keyword(k -> k.index(true)))
+                            .properties("zonecodeList",z -> z
+                                    .keyword(k -> k.index(true)))
+                            .properties("savemonthList",z -> z
+                                    .keyword(k -> k.index(true)))
+                    )
+            );
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static void testUpdateDocument (ElasticsearchClient elasticsearchClient) {
+        for (int i = 0; i < 10; i++) {
+            SearchResponse<TestBean> search;
+            try {
+                search = elasticsearchClient.search(s -> s.index("test")
+                                .size(1) // 相当于mysql的size
+                                .query(q -> q.term(t -> t.field("idcard").value("421281199701240015")))
+                        ,
+                        TestBean.class);
+                System.out.println(search.hits().hits().isEmpty());
+                TestBean source = search.hits().hits().get(0).source();
+                String id = search.hits().hits().get(0).id();
+                UpdateResponse<TestBean> updateResponse = elasticsearchClient.update(updateRequest ->
+                        updateRequest.index("test").id(id)
+                                .doc(source), TestBean.class
+                );
+                // 建议强制刷新
+                elasticsearchClient.indices().refresh(refreshRequest -> refreshRequest.index("test"));
+                log.info("== response: {}, responseStatus: {}", updateResponse, updateResponse.result());
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    /**
+     * @describe 索引多个文档
+     * @param index 索引名称
+     * @param ls 文档列表
+     * @return 索引文档结果
+     * @throws Exception 抛出异常
+     */
+    private static BulkResponse bulk(ElasticsearchClient elasticsearchClient,String index, List<?> ls) {
+
+        try {
+            return elasticsearchClient.bulk(_0 -> {
+                _0.index(index);
+                ls.forEach(_1 -> _0
+                        .operations(_2 -> _2
+                                .create(_3 -> _3
+                                        .document(_1))));
+                return _0;
+            });
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 }
