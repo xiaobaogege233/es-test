@@ -3,16 +3,15 @@ package cn.zchd.test;
 import cn.zchd.entity.HappinessrecordEntity;
 import cn.zchd.entity.TestBean;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
-import co.elastic.clients.elasticsearch._types.SortOrder;
-import co.elastic.clients.elasticsearch._types.aggregations.CompositeAggregationSource;
-import co.elastic.clients.elasticsearch._types.aggregations.CompositeBucket;
+import co.elastic.clients.elasticsearch._types.aggregations.*;
 import co.elastic.clients.elasticsearch._types.mapping.Property;
 import co.elastic.clients.elasticsearch._types.query_dsl.*;
 import co.elastic.clients.elasticsearch.core.*;
 import co.elastic.clients.elasticsearch.core.search.Hit;
-import co.elastic.clients.elasticsearch.core.search.TrackHits;
 import co.elastic.clients.elasticsearch.indices.DeleteIndexResponse;
 import co.elastic.clients.elasticsearch.indices.GetIndexResponse;
+import co.elastic.clients.elasticsearch.indices.PutIndicesSettingsRequest;
+import co.elastic.clients.elasticsearch.indices.PutIndicesSettingsResponse;
 import co.elastic.clients.json.JsonData;
 import co.elastic.clients.json.jackson.JacksonJsonpMapper;
 import co.elastic.clients.transport.ElasticsearchTransport;
@@ -54,7 +53,11 @@ public class EsTest {
 //        String password = "ZzW1guG*Mmosij9xmjaF";
         String password = "dsrrd@121018";
         ElasticsearchClient elasticsearchClient = connectByPasswordAndSsl(serverUrl, username, password);
+//        ElasticsearchClient elasticsearchClient = connect(serverUrl);
+//        testUpdateDocument(elasticsearchClient);
+        distinctEsQuery(elasticsearchClient);
         System.out.println(getCount(elasticsearchClient));
+//        deduplication(elasticsearchClient);
     }
 
     // 直连连接ES
@@ -333,9 +336,12 @@ public class EsTest {
     }
 
     public static void distinctEsQuery(ElasticsearchClient elasticsearchClient){
-        TermQuery termQuery = TermQuery.of(t -> t.field("businesstypeList").value("7"));
+        TermQuery termQuery = TermQuery.of(t -> t.field("savemonthList").value("2023-06"));
+//        RangeQuery rangeQuery = RangeQuery.of(r -> r
+//                .field("savemonthList").gte(JsonData.of("2023-02"))
+//                .field("savemonthList").lte(JsonData.of("2023-03")));
 
-        WildcardQuery wildcardQuery = WildcardQuery.of(t -> t.field("zonecodeList").value(1509 + "*"));
+//        WildcardQuery wildcardQuery = WildcardQuery.of(t -> t.field("zonecodeList").value(1509 + "*"));
         SearchRequest request = SearchRequest.of(searchRequest ->
                 {
                     searchRequest.index("happiness")
@@ -353,7 +359,7 @@ public class EsTest {
                     searchRequest.query(query -> query
                                     .bool(bool -> {
                                         bool.must(new Query(termQuery));
-                                        bool.must(new Query(wildcardQuery));
+//                                        bool.must(new Query(wildcardQuery));
 //                                        bool.must(new Query(TermQuery.of(t -> t.field("businesstypeList").value("1"))));
                                         return bool;
                                     })
@@ -410,27 +416,25 @@ public class EsTest {
     }
 
     public static void testUpdateDocument (ElasticsearchClient elasticsearchClient) {
-        for (int i = 0; i < 10; i++) {
-            SearchResponse<TestBean> search;
-            try {
-                search = elasticsearchClient.search(s -> s.index("test")
-                                .size(1) // 相当于mysql的size
-                                .query(q -> q.term(t -> t.field("idcard").value("421281199701240015")))
-                        ,
-                        TestBean.class);
-                System.out.println(search.hits().hits().isEmpty());
-                TestBean source = search.hits().hits().get(0).source();
-                String id = search.hits().hits().get(0).id();
-                UpdateResponse<TestBean> updateResponse = elasticsearchClient.update(updateRequest ->
-                        updateRequest.index("test").id(id)
-                                .doc(source), TestBean.class
-                );
-                // 建议强制刷新
-                elasticsearchClient.indices().refresh(refreshRequest -> refreshRequest.index("test"));
-                log.info("== response: {}, responseStatus: {}", updateResponse, updateResponse.result());
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
+        SearchResponse<TestBean> search;
+        try {
+            search = elasticsearchClient.search(s -> s.index("test")
+                            .size(1) // 相当于mysql的size
+                            .query(q -> q.term(t -> t.field("idcard").value("fa61135286ab173552d42f1de6284e99897f7b202f3535ab6bb095750d9bbb97")))
+                    ,
+                    TestBean.class);
+            System.out.println(search.hits().hits().isEmpty());
+            TestBean source = search.hits().hits().get(0).source();
+            String id = search.hits().hits().get(0).id();
+            UpdateResponse<TestBean> updateResponse = elasticsearchClient.update(updateRequest ->
+                    updateRequest.index("test").id(id)
+                            .doc(source), TestBean.class
+            );
+            // 建议强制刷新
+            elasticsearchClient.indices().refresh(refreshRequest -> refreshRequest.index("test"));
+            log.info("== response: {}, responseStatus: {}", updateResponse, updateResponse.result());
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -452,6 +456,36 @@ public class EsTest {
                                         .document(_1))));
                 return _0;
             });
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static void deduplication(ElasticsearchClient elasticsearchClient){
+        SearchRequest searchRequest = SearchRequest.of(search -> search
+                .index("happiness")
+                .size(0)
+                .aggregations("deduplication", agg -> agg.terms(t -> t.field("idcard").minDocCount(2).size(10))));
+
+        try {
+            SearchResponse<TestBean> search = elasticsearchClient.search(searchRequest, TestBean.class);
+            Aggregate duplicateIdcard = search.aggregations().get("deduplication");
+            StringTermsAggregate aggregateVariant = (StringTermsAggregate)duplicateIdcard._get();
+            Object o = aggregateVariant.buckets()._get();
+            if(o instanceof ArrayList<?>){
+                System.out.println(((ArrayList)aggregateVariant.buckets()._get()).size());
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void maxResultWindow(ElasticsearchClient elasticsearchClient){
+        PutIndicesSettingsRequest request = PutIndicesSettingsRequest.of(p -> p.index("happiness").settings(s -> s.maxResultWindow(2000000)));
+        try {
+            PutIndicesSettingsResponse putIndicesSettingsResponse = elasticsearchClient.indices().putSettings(request);
+            boolean acknowledged = putIndicesSettingsResponse.acknowledged();
+            log.info("设置结果:{}",acknowledged);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
