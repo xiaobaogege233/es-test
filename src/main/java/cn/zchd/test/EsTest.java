@@ -1,8 +1,11 @@
 package cn.zchd.test;
 
 import cn.zchd.entity.HappinessrecordEntity;
+import cn.zchd.entity.SavemonthEsEntity;
 import cn.zchd.entity.TestBean;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.FieldSort;
+import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.aggregations.*;
 import co.elastic.clients.elasticsearch._types.mapping.Property;
 import co.elastic.clients.elasticsearch._types.query_dsl.*;
@@ -47,17 +50,14 @@ import java.util.*;
 public class EsTest {
 
     public static void main(String[] args) {
-//        String serverUrl = "127.0.0.1:9200";
-        String serverUrl = "172.20.231.3:9200";
+//        String serverUrl = "172.20.231.3:9200";
+        String serverUrl = "192.168.50.226:9200";
         String username = "elastic";
-//        String password = "ZzW1guG*Mmosij9xmjaF";
-        String password = "dsrrd@121018";
+//        String password = "dsrrd@121018";
+        String password = "UjJPqmZr50wVGSiwlwCY";
         ElasticsearchClient elasticsearchClient = connectByPasswordAndSsl(serverUrl, username, password);
 //        ElasticsearchClient elasticsearchClient = connect(serverUrl);
-//        testUpdateDocument(elasticsearchClient);
-        distinctEsQuery(elasticsearchClient);
         System.out.println(getCount(elasticsearchClient));
-//        deduplication(elasticsearchClient);
     }
 
     // 直连连接ES
@@ -108,7 +108,7 @@ public class EsTest {
 
     private static SSLContext buildSSLContext() {
 //        ClassPathResource resource = new ClassPathResource("http_ca.crt");
-        ClassPathResource resource = new ClassPathResource("http_ca_online.crt");
+        ClassPathResource resource = new ClassPathResource("http_ca_dev.crt");
         SSLContext sslContext = null;
         try {
             CertificateFactory factory = CertificateFactory.getInstance("X.509");
@@ -134,39 +134,10 @@ public class EsTest {
     public static void createIndexAndMappings(ElasticsearchClient elasticsearchClient){
         try {
             elasticsearchClient.indices().create(c -> c
-                    .index("happiness")
+                    .index("happiness-time")
                     .mappings(t -> t
-                            .properties("id",z -> z
-                                    .long_(l -> l.index(true)))
-                            .properties("businesstype",z -> z
-                                    .keyword(k -> k.index(true)))
                             .properties("savemonth",z -> z
                                     .keyword(k -> k.index(true)))
-                            .properties("zonecode",z -> z
-                                    .keyword(k -> k.index(true)))
-                            .properties("address",z -> z
-                                    .keyword(k -> k.index(true)))
-                            .properties("realname",z -> z
-                                    .keyword(k -> k.index(true)))
-                            .properties("idcard",z -> z
-                                    .keyword(k -> k.index(true)))
-                            .properties("amount",z -> z
-                                    .keyword(k -> k.index(true)))
-                            .properties("createtime",z -> z
-                                    .keyword(k -> k.index(true)))
-                            .properties("businesstypestr",z -> z
-                                    .keyword(k -> k.index(true)))
-                            .properties("headname",z -> z
-                                    .keyword(k -> k.index(true)))
-                            .properties("headcard",z -> z
-                                    .keyword(k -> k.index(true)))
-                            .properties("membercount",z -> z
-                                    .keyword(k -> k.index(true)))
-                            .properties("starttime",z -> z
-                                    .keyword(k -> k.index(true)))
-                            .properties("endtime",z -> z
-                                    .keyword(k -> k.index(true)))
-
                     )
             );
         } catch (IOException e) {
@@ -336,12 +307,12 @@ public class EsTest {
     }
 
     public static void distinctEsQuery(ElasticsearchClient elasticsearchClient){
-        TermQuery termQuery = TermQuery.of(t -> t.field("savemonthList").value("2023-06"));
+        TermQuery termQuery = TermQuery.of(t -> t.field("savemonthList").value("2023-12"));
 //        RangeQuery rangeQuery = RangeQuery.of(r -> r
-//                .field("savemonthList").gte(JsonData.of("2023-02"))
-//                .field("savemonthList").lte(JsonData.of("2023-03")));
+//                .field("savemonthList").gte(JsonData.of("2023-01"))
+//                .field("savemonthList").lte(JsonData.of("2023-11")));
 
-//        WildcardQuery wildcardQuery = WildcardQuery.of(t -> t.field("zonecodeList").value(1509 + "*"));
+//        WildcardQuery wildcardQuery = WildcardQuery.of(t -> t.field("zonecodeList").value(15 + "*"));
         SearchRequest request = SearchRequest.of(searchRequest ->
                 {
                     searchRequest.index("happiness")
@@ -358,6 +329,8 @@ public class EsTest {
                     // 如果有多个 .query 后面的 query 会覆盖前面的 query
                     searchRequest.query(query -> query
                                     .bool(bool -> {
+//                                        bool.mustNot(new Query(wildcardQuery));
+//                                        bool.must(new Query(rangeQuery));
                                         bool.must(new Query(termQuery));
 //                                        bool.must(new Query(wildcardQuery));
 //                                        bool.must(new Query(TermQuery.of(t -> t.field("businesstypeList").value("1"))));
@@ -384,7 +357,7 @@ public class EsTest {
     public static long getCount(ElasticsearchClient elasticsearchClient){
         CountResponse count;
         try {
-            count = elasticsearchClient.count(CountRequest.of(t -> t.index("happiness")));
+            count = elasticsearchClient.count(CountRequest.of(t -> t.index("happiness-time")));
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -480,8 +453,8 @@ public class EsTest {
         }
     }
 
-    public void maxResultWindow(ElasticsearchClient elasticsearchClient){
-        PutIndicesSettingsRequest request = PutIndicesSettingsRequest.of(p -> p.index("happiness").settings(s -> s.maxResultWindow(2000000)));
+    public static void maxResultWindow(ElasticsearchClient elasticsearchClient){
+        PutIndicesSettingsRequest request = PutIndicesSettingsRequest.of(p -> p.index("happiness").settings(s -> s.maxResultWindow(2500000)));
         try {
             PutIndicesSettingsResponse putIndicesSettingsResponse = elasticsearchClient.indices().putSettings(request);
             boolean acknowledged = putIndicesSettingsResponse.acknowledged();
